@@ -8,7 +8,7 @@ module.exports = {
     const guild = newState.guild || oldState.guild;
     if (!guild) return;
 
-    const settings = getGuildSettings(guild.id);
+    const settings = await getGuildSettings(guild.id);
     const logChannelId = settings?.log_channel;
     const logChannel = logChannelId ? guild.channels.cache.get(logChannelId) : null;
 
@@ -21,20 +21,20 @@ module.exports = {
     // ─── XP Tracking ───
     if (!oldChannel && newChannel) {
       // Joined voice
-      startVoiceSession(guild.id, member.id);
+      await startVoiceSession(guild.id, member.id);
     } else if (oldChannel && !newChannel) {
       // Left voice
-      const minutes = endVoiceSession(guild.id, member.id);
+      const minutes = await endVoiceSession(guild.id, member.id);
       if (minutes > 0) {
         await handleVoiceXP(guild, member.id, minutes, client);
       }
     } else if (oldChannel && newChannel && oldChannel.id !== newChannel.id) {
       // Moved — credit time in old channel, start new session
-      const minutes = endVoiceSession(guild.id, member.id);
+      const minutes = await endVoiceSession(guild.id, member.id);
       if (minutes > 0) {
         await handleVoiceXP(guild, member.id, minutes, client);
       }
-      startVoiceSession(guild.id, member.id);
+      await startVoiceSession(guild.id, member.id);
     }
 
     // ─── Logging ───

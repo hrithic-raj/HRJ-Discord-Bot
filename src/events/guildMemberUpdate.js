@@ -5,7 +5,7 @@ module.exports = {
   name: 'guildMemberUpdate',
   async execute(oldMember, newMember, client) {
     const guild = newMember.guild;
-    const settings = getGuildSettings(guild.id);
+    const settings = await getGuildSettings(guild.id);
     if (!settings?.log_channel) return;
 
     const logChannel = guild.channels.cache.get(settings.log_channel);

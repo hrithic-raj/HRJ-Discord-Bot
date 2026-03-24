@@ -21,12 +21,12 @@ module.exports = {
     const channel = interaction.options.getChannel('channel');
     const weeklyChannel = interaction.options.getChannel('weekly_channel');
 
-    setLevelChannel(interaction.guild.id, channel.id);
+    await setLevelChannel(interaction.guild.id, channel.id);
 
     if (weeklyChannel) {
-      setWeeklyChannel(interaction.guild.id, weeklyChannel.id);
+      await setWeeklyChannel(interaction.guild.id, weeklyChannel.id);
     } else {
-      setWeeklyChannel(interaction.guild.id, channel.id);
+      await setWeeklyChannel(interaction.guild.id, channel.id);
     }
 
     const embed = new EmbedBuilder()

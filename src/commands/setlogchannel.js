@@ -14,7 +14,7 @@ module.exports = {
 
   async execute(interaction) {
     const channel = interaction.options.getChannel('channel');
-    setLogChannel(interaction.guild.id, channel.id);
+    await setLogChannel(interaction.guild.id, channel.id);
 
     const embed = new EmbedBuilder()
       .setColor(0x3fb950)

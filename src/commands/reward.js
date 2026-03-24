@@ -38,7 +38,7 @@ const rewardCommand = {
         });
       }
 
-      setReward(guild.id, level, role.id);
+      await setReward(guild.id, level, role.id);
 
       const embed = new EmbedBuilder()
         .setColor(0xFFD700)
@@ -54,7 +54,7 @@ const rewardCommand = {
       await interaction.reply({ embeds: [embed] });
 
     } else if (sub === 'list') {
-      const rewards = getAllRewards(guild.id);
+      const rewards = await getAllRewards(guild.id);
 
       if (!rewards.length) {
         return interaction.reply({

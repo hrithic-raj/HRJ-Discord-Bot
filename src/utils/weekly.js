@@ -10,14 +10,14 @@ function scheduleWeeklyAnnouncement(client) {
 
     for (const [guildId, guild] of client.guilds.cache) {
       try {
-        const settings = getGuildSettings(guildId);
+        const settings = await getGuildSettings(guildId);
         if (!settings?.weekly_channel && !settings?.level_channel) continue;
 
         const channelId = settings.weekly_channel || settings.level_channel;
         const channel = guild.channels.cache.get(channelId);
         if (!channel) continue;
 
-        const winner = getWeeklyLeaderboard(guildId);
+        const winner = await getWeeklyLeaderboard(guildId);
         if (!winner || winner.weekly_xp === 0) {
           await channel.send({
             embeds: [{
@@ -27,7 +27,7 @@ function scheduleWeeklyAnnouncement(client) {
               footer: { text: 'LevelGuard • Weekly Reset' },
             }]
           });
-          resetWeeklyXP(guildId);
+          await resetWeeklyXP(guildId);
           continue;
         }
 
@@ -35,7 +35,7 @@ function scheduleWeeklyAnnouncement(client) {
         try {
           member = await guild.members.fetch(winner.user_id);
         } catch {
-          resetWeeklyXP(guildId);
+          await resetWeeklyXP(guildId);
           continue;
         }
 
@@ -47,7 +47,7 @@ function scheduleWeeklyAnnouncement(client) {
           files: [attachment],
         });
 
-        resetWeeklyXP(guildId);
+        await resetWeeklyXP(guildId);
         console.log(`✅ Weekly winner announced for guild: ${guild.name}`);
       } catch (err) {
         console.error(`Weekly announcement error for guild ${guildId}:`, err.message);

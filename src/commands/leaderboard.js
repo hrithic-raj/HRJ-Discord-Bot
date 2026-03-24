@@ -5,11 +5,11 @@ const { generateLeaderboardCard } = require('../utils/canvas');
 const PAGE_SIZE = 10;
 
 async function buildLeaderboardPage(guild, page) {
-  const totalUsers = getTotalUsers(guild.id);
+  const totalUsers = await getTotalUsers(guild.id);
   const totalPages = Math.max(1, Math.ceil(totalUsers / PAGE_SIZE));
   const safePage = Math.min(Math.max(1, page), totalPages);
   const offset = (safePage - 1) * PAGE_SIZE;
-  const entries = getLeaderboard(guild.id, PAGE_SIZE, offset);
+  const entries = await getLeaderboard(guild.id, PAGE_SIZE, offset);
 
   const imageBuffer = await generateLeaderboardCard(entries, safePage, totalPages, guild);
   const attachment = new AttachmentBuilder(imageBuffer, { name: 'leaderboard.png' });

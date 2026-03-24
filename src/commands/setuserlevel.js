@@ -26,8 +26,8 @@ module.exports = {
     const newLevel = interaction.options.getInteger('level');
     const guild = interaction.guild;
 
-    const oldData = getUser(guild.id, targetUser.id);
-    setLevel(guild.id, targetUser.id, newLevel);
+    const oldData = await getUser(guild.id, targetUser.id);
+    await setLevel(guild.id, targetUser.id, newLevel);
 
     const embed = new EmbedBuilder()
       .setColor(0xf0883e)

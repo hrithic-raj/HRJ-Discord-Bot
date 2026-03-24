@@ -26,10 +26,10 @@ module.exports = {
       return interaction.editReply({ content: '❌ Could not find that member in this server.' });
     }
 
-    const userData = getUser(guild.id, targetUser.id);
+    const userData = await getUser(guild.id, targetUser.id);
 
     // Calculate rank
-    const allUsers = getLeaderboard(guild.id, 1000, 0);
+    const allUsers = await getLeaderboard(guild.id, 1000, 0);
     const rank = allUsers.findIndex(u => u.user_id === targetUser.id) + 1 || allUsers.length + 1;
 
     try {

@@ -1,57 +1,50 @@
 const {
   getUser, updateXP, updateLevel, getGuildSettings,
-  getReward, xpForLevel, xpToNextLevel,
+  getReward, xpForLevel, setLastMessage, addVoiceMinutes,
 } = require('../database');
 const { generateLevelUpCard } = require('./canvas');
 const { AttachmentBuilder } = require('discord.js');
 
 const XP_PER_MESSAGE = 15;
 const XP_PER_VOICE_MINUTE = 5;
-const MESSAGE_COOLDOWN_MS = 60 * 1000; // 1 minute cooldown between XP gains
+const MESSAGE_COOLDOWN_MS = 60 * 1000;
 
 async function handleMessageXP(message, client) {
   if (message.author.bot) return;
   const { guild, author } = message;
 
-  const user = getUser(guild.id, author.id);
+  const user = await getUser(guild.id, author.id);
   const now = Date.now();
 
   // Cooldown to prevent spam
   if (now - (user.last_message || 0) < MESSAGE_COOLDOWN_MS) return;
 
   const xpGain = XP_PER_MESSAGE + Math.floor(Math.random() * 10);
-  updateXP(guild.id, author.id, xpGain);
-
-  // Update last message time
-  const db = require('../database').db;
-  db.prepare(`UPDATE users SET last_message = ? WHERE guild_id = ? AND user_id = ?`)
-    .run(now, guild.id, author.id);
+  await updateXP(guild.id, author.id, xpGain);
+  await setLastMessage(guild.id, author.id, now);
 
   await checkLevelUp(guild, author, user, client);
 }
 
 async function handleVoiceXP(guild, userId, minutes, client) {
   if (minutes <= 0) return;
-  const user = getUser(guild.id, userId);
+  const user = await getUser(guild.id, userId);
   const xpGain = minutes * XP_PER_VOICE_MINUTE;
-  updateXP(guild.id, userId, xpGain);
-
-  const db = require('../database').db;
-  db.prepare(`UPDATE users SET voice_minutes = voice_minutes + ? WHERE guild_id = ? AND user_id = ?`)
-    .run(minutes, guild.id, userId);
+  await updateXP(guild.id, userId, xpGain);
+  await addVoiceMinutes(guild.id, userId, minutes);
 
   await checkLevelUp(guild, { id: userId }, user, client);
 }
 
 async function checkLevelUp(guild, author, oldUserData, client) {
-  const newUser = getUser(guild.id, author.id);
-  const currentLevel = newUser.level;
+  const newUser = await getUser(guild.id, author.id);
+  const currentLevel = oldUserData.level;
   const newLevel = calculateLevel(newUser.xp);
 
   if (newLevel > currentLevel) {
-    updateLevel(guild.id, author.id, newLevel);
+    await updateLevel(guild.id, author.id, newLevel);
 
-    const settings = getGuildSettings(guild.id);
+    const settings = await getGuildSettings(guild.id);
     if (!settings?.level_channel) return;
 
     const channel = guild.channels.cache.get(settings.level_channel);
@@ -63,7 +56,7 @@ async function checkLevelUp(guild, author, oldUserData, client) {
     } catch { return; }
 
     // Award role reward if exists
-    const reward = getReward(guild.id, newLevel);
+    const reward = await getReward(guild.id, newLevel);
     let rewardRole = null;
     if (reward) {
       try {
