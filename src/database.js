@@ -1,191 +1,61 @@
-const Database = require('better-sqlite3');
-const path = require('path');
+const mongoose = require('mongoose');
 
-const db = new Database(path.join(__dirname, '..', 'levelguard.db'));
+// ─── Schemas ───────────────────────────────────────────────
 
-function initDatabase() {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      guild_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      xp INTEGER DEFAULT 0,
-      level INTEGER DEFAULT 0,
-      messages INTEGER DEFAULT 0,
-      voice_minutes INTEGER DEFAULT 0,
-      last_message INTEGER DEFAULT 0,
-      weekly_xp INTEGER DEFAULT 0,
-      PRIMARY KEY (guild_id, user_id)
-    );
+const userSchema = new mongoose.Schema({
+  guild_id:      { type: String, required: true },
+  user_id:       { type: String, required: true },
+  xp:            { type: Number, default: 0 },
+  level:         { type: Number, default: 0 },
+  messages:      { type: Number, default: 0 },
+  voice_minutes: { type: Number, default: 0 },
+  last_message:  { type: Number, default: 0 },
+  weekly_xp:     { type: Number, default: 0 },
+});
+userSchema.index({ guild_id: 1, user_id: 1 }, { unique: true });
 
-    CREATE TABLE IF NOT EXISTS guild_settings (
-      guild_id TEXT PRIMARY KEY,
-      level_channel TEXT,
-      log_channel TEXT,
-      weekly_channel TEXT
-    );
+const guildSettingsSchema = new mongoose.Schema({
+  guild_id:       { type: String, required: true, unique: true },
+  level_channel:  { type: String, default: null },
+  log_channel:    { type: String, default: null },
+  weekly_channel: { type: String, default: null },
+});
 
-    CREATE TABLE IF NOT EXISTS rewards (
-      guild_id TEXT NOT NULL,
-      level INTEGER NOT NULL,
-      role_id TEXT NOT NULL,
-      PRIMARY KEY (guild_id, level)
-    );
+const rewardSchema = new mongoose.Schema({
+  guild_id: { type: String, required: true },
+  level:    { type: Number, required: true },
+  role_id:  { type: String, required: true },
+});
+rewardSchema.index({ guild_id: 1, level: 1 }, { unique: true });
 
-    CREATE TABLE IF NOT EXISTS voice_sessions (
-      guild_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      join_time INTEGER NOT NULL,
-      PRIMARY KEY (guild_id, user_id)
-    );
-  `);
-  console.log('✅ Database initialized');
-}
+const voiceSessionSchema = new mongoose.Schema({
+  guild_id:  { type: String, required: true },
+  user_id:   { type: String, required: true },
+  join_time: { type: Number, required: true },
+});
+voiceSessionSchema.index({ guild_id: 1, user_id: 1 }, { unique: true });
 
-// --- User XP/Level ---
-function getUser(guildId, userId) {
-  return db.prepare(`
-    SELECT * FROM users WHERE guild_id = ? AND user_id = ?
-  `).get(guildId, userId) || createUser(guildId, userId);
-}
+// ─── Models ────────────────────────────────────────────────
 
-function createUser(guildId, userId) {
-  db.prepare(`
-    INSERT OR IGNORE INTO users (guild_id, user_id) VALUES (?, ?)
-  `).run(guildId, userId);
-  return db.prepare(`SELECT * FROM users WHERE guild_id = ? AND user_id = ?`).get(guildId, userId);
-}
+const User          = mongoose.model('User', userSchema);
+const GuildSettings = mongoose.model('GuildSettings', guildSettingsSchema);
+const Reward        = mongoose.model('Reward', rewardSchema);
+const VoiceSession  = mongoose.model('VoiceSession', voiceSessionSchema);
 
-function updateXP(guildId, userId, xpToAdd) {
-  db.prepare(`
-    INSERT INTO users (guild_id, user_id, xp, weekly_xp)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(guild_id, user_id) DO UPDATE SET
-      xp = xp + excluded.xp,
-      weekly_xp = weekly_xp + excluded.weekly_xp
-  `).run(guildId, userId, xpToAdd, xpToAdd);
-}
+// ─── Connect ───────────────────────────────────────────────
 
-function setLevel(guildId, userId, level) {
-  const xp = xpForLevel(level);
-  db.prepare(`
-    UPDATE users SET level = ?, xp = ? WHERE guild_id = ? AND user_id = ?
-  `).run(level, xp, guildId, userId);
-}
-
-function incrementMessages(guildId, userId) {
-  db.prepare(`
-    INSERT INTO users (guild_id, user_id, messages)
-    VALUES (?, ?, 1)
-    ON CONFLICT(guild_id, user_id) DO UPDATE SET messages = messages + 1
-  `).run(guildId, userId);
-}
-
-function setLastMessage(guildId, userId, timestamp) {
-  db.prepare(`UPDATE users SET last_message = ? WHERE guild_id = ? AND user_id = ?`)
-    .run(timestamp, guildId, userId);
-}
-
-function updateLevel(guildId, userId, level) {
-  db.prepare(`UPDATE users SET level = ? WHERE guild_id = ? AND user_id = ?`)
-    .run(level, guildId, userId);
-}
-
-function addVoiceMinutes(guildId, userId, minutes) {
-  db.prepare(`
-    INSERT INTO users (guild_id, user_id, voice_minutes)
-    VALUES (?, ?, ?)
-    ON CONFLICT(guild_id, user_id) DO UPDATE SET voice_minutes = voice_minutes + ?
-  `).run(guildId, userId, minutes, minutes);
-}
-
-function getLeaderboard(guildId, limit = 10, offset = 0) {
-  return db.prepare(`
-    SELECT * FROM users WHERE guild_id = ?
-    ORDER BY xp DESC LIMIT ? OFFSET ?
-  `).all(guildId, limit, offset);
-}
-
-function getTotalUsers(guildId) {
-  return db.prepare(`SELECT COUNT(*) as count FROM users WHERE guild_id = ?`).get(guildId).count;
-}
-
-function getWeeklyLeaderboard(guildId) {
-  return db.prepare(`
-    SELECT * FROM users WHERE guild_id = ?
-    ORDER BY weekly_xp DESC LIMIT 1
-  `).get(guildId);
-}
-
-function resetWeeklyXP(guildId) {
-  db.prepare(`UPDATE users SET weekly_xp = 0 WHERE guild_id = ?`).run(guildId);
-}
-
-// --- Guild Settings ---
-function getGuildSettings(guildId) {
-  return db.prepare(`SELECT * FROM guild_settings WHERE guild_id = ?`).get(guildId);
-}
-
-function setLevelChannel(guildId, channelId) {
-  db.prepare(`
-    INSERT INTO guild_settings (guild_id, level_channel)
-    VALUES (?, ?)
-    ON CONFLICT(guild_id) DO UPDATE SET level_channel = ?
-  `).run(guildId, channelId, channelId);
-}
-
-function setLogChannel(guildId, channelId) {
-  db.prepare(`
-    INSERT INTO guild_settings (guild_id, log_channel)
-    VALUES (?, ?)
-    ON CONFLICT(guild_id) DO UPDATE SET log_channel = ?
-  `).run(guildId, channelId, channelId);
-}
-
-function setWeeklyChannel(guildId, channelId) {
-  db.prepare(`
-    INSERT INTO guild_settings (guild_id, weekly_channel)
-    VALUES (?, ?)
-    ON CONFLICT(guild_id) DO UPDATE SET weekly_channel = ?
-  `).run(guildId, channelId, channelId);
-}
-
-// --- Rewards ---
-function setReward(guildId, level, roleId) {
-  db.prepare(`
-    INSERT INTO rewards (guild_id, level, role_id)
-    VALUES (?, ?, ?)
-    ON CONFLICT(guild_id, level) DO UPDATE SET role_id = ?
-  `).run(guildId, level, roleId, roleId);
-}
-
-function getReward(guildId, level) {
-  return db.prepare(`SELECT * FROM rewards WHERE guild_id = ? AND level = ?`).get(guildId, level);
-}
-
-function getAllRewards(guildId) {
-  return db.prepare(`SELECT * FROM rewards WHERE guild_id = ? ORDER BY level ASC`).all(guildId);
-}
-
-// --- Voice Sessions ---
-function startVoiceSession(guildId, userId) {
-  db.prepare(`
-    INSERT OR REPLACE INTO voice_sessions (guild_id, user_id, join_time)
-    VALUES (?, ?, ?)
-  `).run(guildId, userId, Date.now());
-}
-
-function endVoiceSession(guildId, userId) {
-  const session = db.prepare(`
-    SELECT * FROM voice_sessions WHERE guild_id = ? AND user_id = ?
-  `).get(guildId, userId);
-  if (session) {
-    db.prepare(`DELETE FROM voice_sessions WHERE guild_id = ? AND user_id = ?`).run(guildId, userId);
-    return Math.floor((Date.now() - session.join_time) / 60000);
+async function initDatabase() {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI);
+    console.log('✅ Connected to MongoDB');
+  } catch (err) {
+    console.error('❌ MongoDB connection error:', err.message);
+    process.exit(1);
   }
-  return 0;
 }
 
-// --- XP Formula ---
+// ─── XP Formula ────────────────────────────────────────────
+
 function xpForLevel(level) {
   return Math.floor(100 * Math.pow(level, 1.5));
 }
@@ -194,10 +64,160 @@ function xpToNextLevel(level) {
   return xpForLevel(level + 1);
 }
 
+// ─── User helpers ──────────────────────────────────────────
+
+async function getUser(guildId, userId) {
+  return await User.findOneAndUpdate(
+    { guild_id: guildId, user_id: userId },
+    { $setOnInsert: { guild_id: guildId, user_id: userId } },
+    { upsert: true, new: true }
+  );
+}
+
+async function updateXP(guildId, userId, xpToAdd) {
+  await User.findOneAndUpdate(
+    { guild_id: guildId, user_id: userId },
+    { $inc: { xp: xpToAdd, weekly_xp: xpToAdd } },
+    { upsert: true }
+  );
+}
+
+async function setLevel(guildId, userId, level) {
+  const xp = xpForLevel(level);
+  await User.findOneAndUpdate(
+    { guild_id: guildId, user_id: userId },
+    { $set: { level, xp } },
+    { upsert: true }
+  );
+}
+
+async function updateLevel(guildId, userId, level) {
+  await User.findOneAndUpdate(
+    { guild_id: guildId, user_id: userId },
+    { $set: { level } },
+    { upsert: true }
+  );
+}
+
+async function incrementMessages(guildId, userId) {
+  await User.findOneAndUpdate(
+    { guild_id: guildId, user_id: userId },
+    { $inc: { messages: 1 } },
+    { upsert: true }
+  );
+}
+
+async function setLastMessage(guildId, userId, timestamp) {
+  await User.findOneAndUpdate(
+    { guild_id: guildId, user_id: userId },
+    { $set: { last_message: timestamp } },
+    { upsert: true }
+  );
+}
+
+async function addVoiceMinutes(guildId, userId, minutes) {
+  await User.findOneAndUpdate(
+    { guild_id: guildId, user_id: userId },
+    { $inc: { voice_minutes: minutes } },
+    { upsert: true }
+  );
+}
+
+async function getLeaderboard(guildId, limit = 10, offset = 0) {
+  return await User.find({ guild_id: guildId })
+    .sort({ xp: -1 })
+    .skip(offset)
+    .limit(limit)
+    .lean();
+}
+
+async function getTotalUsers(guildId) {
+  return await User.countDocuments({ guild_id: guildId });
+}
+
+async function getWeeklyLeaderboard(guildId) {
+  return await User.findOne({ guild_id: guildId })
+    .sort({ weekly_xp: -1 })
+    .lean();
+}
+
+async function resetWeeklyXP(guildId) {
+  await User.updateMany({ guild_id: guildId }, { $set: { weekly_xp: 0 } });
+}
+
+// ─── Guild Settings ────────────────────────────────────────
+
+async function getGuildSettings(guildId) {
+  return await GuildSettings.findOne({ guild_id: guildId }).lean();
+}
+
+async function setLevelChannel(guildId, channelId) {
+  await GuildSettings.findOneAndUpdate(
+    { guild_id: guildId },
+    { $set: { level_channel: channelId } },
+    { upsert: true }
+  );
+}
+
+async function setLogChannel(guildId, channelId) {
+  await GuildSettings.findOneAndUpdate(
+    { guild_id: guildId },
+    { $set: { log_channel: channelId } },
+    { upsert: true }
+  );
+}
+
+async function setWeeklyChannel(guildId, channelId) {
+  await GuildSettings.findOneAndUpdate(
+    { guild_id: guildId },
+    { $set: { weekly_channel: channelId } },
+    { upsert: true }
+  );
+}
+
+// ─── Rewards ───────────────────────────────────────────────
+
+async function setReward(guildId, level, roleId) {
+  await Reward.findOneAndUpdate(
+    { guild_id: guildId, level },
+    { $set: { role_id: roleId } },
+    { upsert: true }
+  );
+}
+
+async function getReward(guildId, level) {
+  return await Reward.findOne({ guild_id: guildId, level }).lean();
+}
+
+async function getAllRewards(guildId) {
+  return await Reward.find({ guild_id: guildId }).sort({ level: 1 }).lean();
+}
+
+// ─── Voice Sessions ────────────────────────────────────────
+
+async function startVoiceSession(guildId, userId) {
+  await VoiceSession.findOneAndUpdate(
+    { guild_id: guildId, user_id: userId },
+    { $set: { join_time: Date.now() } },
+    { upsert: true }
+  );
+}
+
+async function endVoiceSession(guildId, userId) {
+  const session = await VoiceSession.findOneAndDelete({
+    guild_id: guildId,
+    user_id: userId,
+  });
+  if (!session) return 0;
+  return Math.floor((Date.now() - session.join_time) / 60000);
+}
+
+// ─── Exports ───────────────────────────────────────────────
+
 module.exports = {
-  initDatabase, db,
-  getUser, createUser, updateXP, setLevel, incrementMessages,
-  setLastMessage, updateLevel, addVoiceMinutes,
+  initDatabase,
+  getUser, updateXP, setLevel, updateLevel,
+  incrementMessages, setLastMessage, addVoiceMinutes,
   getLeaderboard, getTotalUsers, getWeeklyLeaderboard, resetWeeklyXP,
   getGuildSettings, setLevelChannel, setLogChannel, setWeeklyChannel,
   setReward, getReward, getAllRewards,
