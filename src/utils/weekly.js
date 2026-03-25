@@ -6,7 +6,7 @@ const { AttachmentBuilder } = require('discord.js');
 function scheduleWeeklyAnnouncement(client) {
   // Every Sunday at 11:55 PM
   cron.schedule('55 23 * * 0', async () => {
-    console.log('📅 Running weekly winner announcement...');
+    console.log('Running weekly winner announcement...');
 
     for (const [guildId, guild] of client.guilds.cache) {
       try {

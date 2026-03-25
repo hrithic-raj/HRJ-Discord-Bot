@@ -5,8 +5,8 @@ const {
 const { generateLevelUpCard } = require('./canvas');
 const { AttachmentBuilder } = require('discord.js');
 
-const XP_PER_MESSAGE = 15;
-const XP_PER_VOICE_MINUTE = 5;
+const XP_PER_MESSAGE = 10;
+const XP_PER_VOICE_MINUTE = 2;
 const MESSAGE_COOLDOWN_MS = 60 * 1000;
 
 async function handleMessageXP(message, client) {
