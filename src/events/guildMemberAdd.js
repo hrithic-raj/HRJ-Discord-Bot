@@ -1,7 +1,7 @@
 const { EmbedBuilder } = require('discord.js');
 const {
   getAllGuildInvites, upsertInvite,
-  incrementInviteUses, logJoin, getGuildSettings,
+  logJoin, getGuildSettings,
 } = require('../database');
 
 module.exports = {
@@ -10,49 +10,65 @@ module.exports = {
     const guild = member.guild;
 
     // ─── Detect which invite was used ──────────────────────
-    // Strategy: fetch current invite list, compare use counts
-    // against our cached counts to find which one increased.
-    let usedInvite = null;
-    let inviterId = null;
+    //
+    // HOW IT WORKS:
+    // 1. BEFORE the join: DB holds each invite's use count (snapshot)
+    // 2. AFTER the join:  we fetch live counts from Discord
+    // 3. Whichever invite's live count is HIGHER than our snapshot = the used one
+    // 4. We then update our snapshot to match the new live count
+    //
+    // Key fix: we update DB AFTER finding the match, not before.
+    // Previous bug: upsertInvite ran before we finished searching, corrupting the snapshot.
+
+    let usedInvite  = null;
+    let inviterId   = null;
 
     try {
-      // Fetch live invites from Discord
-      const currentInvites = await guild.invites.fetch();
-
-      // Get our stored invite records
+      // Step 1 — get our stored snapshot BEFORE touching anything
       const storedInvites = await getAllGuildInvites(guild.id);
-      const storedMap = new Map(storedInvites.map(i => [i.invite_code, i]));
+      const storedMap = new Map(storedInvites.map(i => [i.invite_code, i.uses ?? 0]));
 
-      // Find the invite whose use count increased by 1
-      for (const [code, invite] of currentInvites) {
-        const stored = storedMap.get(code);
-        const storedUses = stored?.uses ?? 0;
+      // Step 2 — fetch live invite counts from Discord right now
+      const liveInvites = await guild.invites.fetch();
 
-        if (invite.uses > storedUses) {
+      // Step 3 — find the invite whose live count is higher than our snapshot
+      for (const [code, invite] of liveInvites) {
+        const storedUses = storedMap.get(code) ?? 0;
+        const liveUses   = invite.uses ?? 0;
+
+        if (liveUses > storedUses) {
           usedInvite = invite;
-          inviterId = invite.inviter?.id ?? null;
+          inviterId  = invite.inviter?.id ?? null;
 
-          // Update stored use count
-          await upsertInvite(guild.id, inviterId, code, invite.uses);
-          await incrementInviteUses(guild.id, code);
+          console.log(
+            `✅ Invite match: code=${code} storedUses=${storedUses} liveUses=${liveUses}` +
+            ` inviter=${invite.inviter?.tag ?? 'unknown'}`
+          );
           break;
         }
       }
 
-      // Also sync any new invites we haven't seen before
-      for (const [code, invite] of currentInvites) {
-        if (!storedMap.has(code)) {
-          await upsertInvite(guild.id, invite.inviter?.id ?? 'unknown', code, invite.uses);
-        }
+      // Step 4 — sync ALL live invite counts to DB now that we've identified the winner
+      for (const [code, invite] of liveInvites) {
+        await upsertInvite(
+          guild.id,
+          invite.inviter?.id ?? null,
+          code,
+          invite.uses ?? 0
+        );
+      }
+
+      if (!usedInvite) {
+        console.warn(`⚠️ Could not identify invite used by ${member.user.tag} — no count diff found`);
       }
     } catch (e) {
       console.error('Invite detection error:', e.message);
     }
 
-    // ─── Save join log ─────────────────────────────────────
+    // ─── Save join log to DB ────────────────────────────────
     await logJoin(guild.id, member.id, inviterId, usedInvite?.code ?? null);
 
-    // ─── Send log to voice_log_channel (or level_channel) ──
+    // ─── Send log embed ─────────────────────────────────────
     const settings = await getGuildSettings(guild.id);
     const channelId = settings?.invite_log_channel;
     if (!channelId) return;
@@ -60,22 +76,52 @@ module.exports = {
     const channel = guild.channels.cache.get(channelId);
     if (!channel) return;
 
+    // Resolve inviter member for display name + avatar
+    let inviterMember = null;
+    if (inviterId) {
+      try { inviterMember = await guild.members.fetch(inviterId); } catch {}
+    }
+
     const embed = new EmbedBuilder()
       .setColor(0x3fb950)
       .setTitle('👋 New Member Joined')
-      .setThumbnail(member.displayAvatarURL({ size: 64 }))
-      .addFields(
-        { name: 'Member',    value: `<@${member.id}>`,   inline: true },
-        { name: 'Account',   value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true },
-      );
+      .setThumbnail(member.displayAvatarURL({ size: 128 }));
+
+    embed.addFields(
+      { name: 'Member',  value: `<@${member.id}>`, inline: true },
+      { name: 'Account Created', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`, inline: true },
+    );
 
     if (inviterId) {
       embed.addFields(
-        { name: 'Invited By',   value: `<@${inviterId}>`,         inline: true },
-        { name: 'Invite Code',  value: `\`${usedInvite?.code}\``, inline: true },
+        {
+          name: '🔗 Invited By',
+          value: inviterMember
+            ? `<@${inviterId}> (${inviterMember.displayName})`
+            : `<@${inviterId}>`,
+          inline: true,
+        },
+        {
+          name: '🎟️ Invite Code',
+          value: `\`${usedInvite?.code}\``,
+          inline: true,
+        },
       );
+
+      // Show inviter's total invite count
+      const { getInviteCount } = require('../database');
+      const totalInvites = await getInviteCount(guild.id, inviterId);
+      embed.addFields({
+        name: '📊 Inviter Total',
+        value: `${inviterMember?.displayName ?? 'This user'} has now invited **${totalInvites}** member${totalInvites !== 1 ? 's' : ''}`,
+        inline: false,
+      });
     } else {
-      embed.addFields({ name: 'Invited By', value: 'Unknown (vanity URL / OAuth)', inline: true });
+      embed.addFields({
+        name: '🔗 Invited By',
+        value: 'Unknown — vanity URL, OAuth, or bot couldn\'t detect',
+        inline: true,
+      });
     }
 
     embed
