@@ -73,6 +73,14 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
+// Download fonts if not present (needed on Railway/Linux for canvas text rendering)
+try {
+  const { execSync } = require('child_process');
+  execSync(`node ${path.join(__dirname, 'downloadFonts.js')}`, { stdio: 'inherit' });
+} catch (e) {
+  console.warn('⚠️ Font download failed, text may not render. Error:', e.message);
+}
+
 initDatabase();
 scheduleWeeklyAnnouncement(client);
 

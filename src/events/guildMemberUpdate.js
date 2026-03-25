@@ -6,9 +6,9 @@ module.exports = {
   async execute(oldMember, newMember, client) {
     const guild = newMember.guild;
     const settings = await getGuildSettings(guild.id);
-    if (!settings?.log_channel) return;
+    if (!settings?.role_log_channel) return;
 
-    const logChannel = guild.channels.cache.get(settings.log_channel);
+    const logChannel = guild.channels.cache.get(settings.role_log_channel);
     if (!logChannel) return;
 
     const oldRoles = oldMember.roles.cache;

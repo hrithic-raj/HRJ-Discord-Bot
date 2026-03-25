@@ -15,10 +15,11 @@ const userSchema = new mongoose.Schema({
 userSchema.index({ guild_id: 1, user_id: 1 }, { unique: true });
 
 const guildSettingsSchema = new mongoose.Schema({
-  guild_id:       { type: String, required: true, unique: true },
-  level_channel:  { type: String, default: null },
-  log_channel:    { type: String, default: null },
-  weekly_channel: { type: String, default: null },
+  guild_id:          { type: String, required: true, unique: true },
+  level_channel:     { type: String, default: null },
+  voice_log_channel: { type: String, default: null },
+  role_log_channel:  { type: String, default: null },
+  weekly_channel:    { type: String, default: null },
 });
 
 const rewardSchema = new mongoose.Schema({
@@ -159,10 +160,18 @@ async function setLevelChannel(guildId, channelId) {
   );
 }
 
-async function setLogChannel(guildId, channelId) {
+async function setVoiceLogChannel(guildId, channelId) {
   await GuildSettings.findOneAndUpdate(
     { guild_id: guildId },
-    { $set: { log_channel: channelId } },
+    { $set: { voice_log_channel: channelId } },
+    { upsert: true }
+  );
+}
+
+async function setRoleLogChannel(guildId, channelId) {
+  await GuildSettings.findOneAndUpdate(
+    { guild_id: guildId },
+    { $set: { role_log_channel: channelId } },
     { upsert: true }
   );
 }
@@ -219,7 +228,7 @@ module.exports = {
   getUser, updateXP, setLevel, updateLevel,
   incrementMessages, setLastMessage, addVoiceMinutes,
   getLeaderboard, getTotalUsers, getWeeklyLeaderboard, resetWeeklyXP,
-  getGuildSettings, setLevelChannel, setLogChannel, setWeeklyChannel,
+  getGuildSettings, setLevelChannel, setVoiceLogChannel, setRoleLogChannel, setWeeklyChannel,
   setReward, getReward, getAllRewards,
   startVoiceSession, endVoiceSession,
   xpForLevel, xpToNextLevel,
