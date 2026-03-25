@@ -163,13 +163,10 @@ client.on('interactionCreate', async interaction => {
 });
 
 (async () => {
-  // Step 1: Download fonts FIRST — canvas.js needs them on disk before it loads
+  // Step 1: Download fonts FIRST
   await ensureFonts();
 
-  // Step 2: NOW require canvas so GlobalFonts.registerFromPath finds the files
-  require('./utils/canvas');
-
-  // Step 3: DB + bot
+  // Step 2: DB + bot (canvas.js will register fonts lazily when first draw happens)
   await initDatabase();
   scheduleWeeklyAnnouncement(client);
   await client.login(process.env.BOT_TOKEN);

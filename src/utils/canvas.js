@@ -3,31 +3,32 @@ const path = require('path');
 const fs = require('fs');
 const { xpForLevel } = require('../database');
 
-// ─── Register fonts ────────────────────────────────────────
-// Fonts are downloaded by index.js before this module is required.
-// GlobalFonts.registerFromPath is safe to call multiple times.
+// ─── Register fonts (lazy — called at draw time, not module load) ──
 const ASSETS = path.join(__dirname, '..', 'assets');
 const FONT_BOLD    = path.join(ASSETS, 'NotoSans-Bold.ttf');
 const FONT_REGULAR = path.join(ASSETS, 'NotoSans-Regular.ttf');
 
-function registerFonts() {
-  let registered = false;
+let _fontsRegistered = false;
+
+function ensureFontsRegistered() {
+  if (_fontsRegistered) return;
+  let ok = false;
   if (fs.existsSync(FONT_BOLD)) {
     GlobalFonts.registerFromPath(FONT_BOLD, 'Noto');
-    registered = true;
     console.log('✅ Font registered: NotoSans-Bold');
+    ok = true;
   } else {
-    console.warn('⚠️ NotoSans-Bold.ttf not found at', FONT_BOLD);
+    console.warn('⚠️ Font file missing:', FONT_BOLD);
   }
   if (fs.existsSync(FONT_REGULAR)) {
     GlobalFonts.registerFromPath(FONT_REGULAR, 'Noto');
     console.log('✅ Font registered: NotoSans-Regular');
+    ok = true;
   } else {
-    console.warn('⚠️ NotoSans-Regular.ttf not found at', FONT_REGULAR);
+    console.warn('⚠️ Font file missing:', FONT_REGULAR);
   }
-  return registered;
+  if (ok) _fontsRegistered = true;
 }
-registerFonts();
 
 const FONT = 'Noto, Arial, sans-serif';
 
@@ -82,6 +83,7 @@ function xpProgress(xp, level) {
 
 // ══ LEVEL UP CARD ══
 async function generateLevelUpCard(member, oldLevel, newLevel, xp, guild) {
+  ensureFontsRegistered();
   const W = 800, H = 240;
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext('2d');
@@ -154,6 +156,7 @@ async function generateLevelUpCard(member, oldLevel, newLevel, xp, guild) {
 
 // ══ PROFILE CARD ══
 async function generateProfileCard(member, userData, rank, guild) {
+  ensureFontsRegistered();
   const W = 800, H = 300;
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext('2d');
@@ -247,6 +250,7 @@ async function generateProfileCard(member, userData, rank, guild) {
 
 // ══ LEADERBOARD CARD ══
 async function generateLeaderboardCard(entries, page, totalPages, guild) {
+  ensureFontsRegistered();
   const W = 780, ROW_H = 65, HEADER_H = 100, FOOTER_H = 50;
   const H = HEADER_H + entries.length * ROW_H + FOOTER_H;
   const canvas = createCanvas(W, H);
@@ -329,6 +333,7 @@ async function generateLeaderboardCard(entries, page, totalPages, guild) {
 
 // ══ WEEKLY WINNER CARD ══
 async function generateWeeklyWinnerCard(member, userData, guild) {
+  ensureFontsRegistered();
   const W = 750, H = 280;
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext('2d');
