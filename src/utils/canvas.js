@@ -4,13 +4,28 @@ const fs = require('fs');
 const { xpForLevel } = require('../database');
 
 // ─── Register fonts ────────────────────────────────────────
+// Fonts are downloaded by index.js before this module is required.
+// GlobalFonts.registerFromPath is safe to call multiple times.
 const ASSETS = path.join(__dirname, '..', 'assets');
 const FONT_BOLD    = path.join(ASSETS, 'NotoSans-Bold.ttf');
 const FONT_REGULAR = path.join(ASSETS, 'NotoSans-Regular.ttf');
 
 function registerFonts() {
-  if (fs.existsSync(FONT_BOLD))    GlobalFonts.registerFromPath(FONT_BOLD,    'Noto');
-  if (fs.existsSync(FONT_REGULAR)) GlobalFonts.registerFromPath(FONT_REGULAR, 'Noto');
+  let registered = false;
+  if (fs.existsSync(FONT_BOLD)) {
+    GlobalFonts.registerFromPath(FONT_BOLD, 'Noto');
+    registered = true;
+    console.log('✅ Font registered: NotoSans-Bold');
+  } else {
+    console.warn('⚠️ NotoSans-Bold.ttf not found at', FONT_BOLD);
+  }
+  if (fs.existsSync(FONT_REGULAR)) {
+    GlobalFonts.registerFromPath(FONT_REGULAR, 'Noto');
+    console.log('✅ Font registered: NotoSans-Regular');
+  } else {
+    console.warn('⚠️ NotoSans-Regular.ttf not found at', FONT_REGULAR);
+  }
+  return registered;
 }
 registerFonts();
 

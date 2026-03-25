@@ -71,7 +71,7 @@ async function getUser(guildId, userId) {
   return await User.findOneAndUpdate(
     { guild_id: guildId, user_id: userId },
     { $setOnInsert: { guild_id: guildId, user_id: userId } },
-    { upsert: true, new: true }
+    { upsert: true, returnDocument: 'after' }
   );
 }
 

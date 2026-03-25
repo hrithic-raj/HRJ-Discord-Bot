@@ -2,6 +2,56 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, Collection, Partials } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
+
+// ─── Font Download (must happen before canvas is used) ─────
+const ASSETS_DIR = path.join(__dirname, 'assets');
+if (!fs.existsSync(ASSETS_DIR)) fs.mkdirSync(ASSETS_DIR, { recursive: true });
+
+const FONTS = [
+  {
+    file: path.join(ASSETS_DIR, 'NotoSans-Bold.ttf'),
+    url: 'https://github.com/google/fonts/raw/main/ofl/notosans/NotoSans-Bold.ttf',
+  },
+  {
+    file: path.join(ASSETS_DIR, 'NotoSans-Regular.ttf'),
+    url: 'https://github.com/google/fonts/raw/main/ofl/notosans/NotoSans-Regular.ttf',
+  },
+];
+
+function downloadFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    if (fs.existsSync(dest)) return resolve();
+    const file = fs.createWriteStream(dest);
+    const get = (u) => {
+      https.get(u, (res) => {
+        if (res.statusCode === 301 || res.statusCode === 302) {
+          return get(res.headers.location);
+        }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`HTTP ${res.statusCode} for ${u}`));
+        }
+        res.pipe(file);
+        file.on('finish', () => { file.close(); resolve(); });
+        file.on('error', reject);
+      }).on('error', reject);
+    };
+    get(url);
+  });
+}
+
+async function ensureFonts() {
+  for (const font of FONTS) {
+    try {
+      await downloadFile(font.url, font.file);
+      console.log(`✅ Font ready: ${path.basename(font.file)}`);
+    } catch (e) {
+      console.warn(`⚠️ Font download failed: ${path.basename(font.file)} — ${e.message}`);
+    }
+  }
+}
+
+// ─── Boot ──────────────────────────────────────────────────
 const { initDatabase } = require('./database');
 const { scheduleWeeklyAnnouncement } = require('./utils/weekly');
 
@@ -20,7 +70,6 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// Load commands
 const commandsPath = path.join(__dirname, 'commands');
 const commandFiles = fs.readdirSync(commandsPath).filter(f => f.endsWith('.js'));
 for (const file of commandFiles) {
@@ -30,7 +79,6 @@ for (const file of commandFiles) {
   }
 }
 
-// Load events
 const eventsPath = path.join(__dirname, 'events');
 const eventFiles = fs.readdirSync(eventsPath).filter(f => f.endsWith('.js'));
 for (const file of eventFiles) {
@@ -42,7 +90,6 @@ for (const file of eventFiles) {
   }
 }
 
-// Handle slash commands
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand() && !interaction.isButton()) return;
 
@@ -63,7 +110,6 @@ client.on('interactionCreate', async interaction => {
   }
 
   if (interaction.isButton()) {
-    // Leaderboard pagination
     if (interaction.customId.startsWith('lb_')) {
       const lbCommand = client.commands.get('leaderboard');
       if (lbCommand && lbCommand.handleButton) {
@@ -73,15 +119,16 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// Download fonts if not present (needed on Railway/Linux for canvas text rendering)
-try {
-  const { execSync } = require('child_process');
-  execSync(`node ${path.join(__dirname, 'downloadFonts.js')}`, { stdio: 'inherit' });
-} catch (e) {
-  console.warn('⚠️ Font download failed, text may not render. Error:', e.message);
-}
+// ─── Start everything ──────────────────────────────────────
+(async () => {
+  // 1. Download fonts first — canvas.js needs them registered on require
+  await ensureFonts();
 
-initDatabase();
-scheduleWeeklyAnnouncement(client);
+  // 2. Now safe to require canvas (fonts are on disk before registerFromPath runs)
+  require('./utils/canvas');
 
-client.login(process.env.BOT_TOKEN);
+  // 3. Connect DB and start bot
+  await initDatabase();
+  scheduleWeeklyAnnouncement(client);
+  await client.login(process.env.BOT_TOKEN);
+})();
