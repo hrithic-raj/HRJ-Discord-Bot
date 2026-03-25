@@ -72,7 +72,7 @@ async function checkLevelUp(guild, author, oldUserData, client) {
       const attachment = new AttachmentBuilder(imageBuffer, { name: 'levelup.png' });
 
       await channel.send({
-        content: `<@${author.id}> Theeee🔥`,
+        content: `<@${author.id}>`,
         files: [attachment],
       });
 
