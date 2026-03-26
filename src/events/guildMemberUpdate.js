@@ -1,7 +1,6 @@
 const { EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { getGuildSettings } = require('../database');
 
-// Helper: fetch most recent audit log entry for a type within 5 seconds
 async function getAuditEntry(guild, type) {
   try {
     await new Promise(r => setTimeout(r, 800));
@@ -66,7 +65,8 @@ module.exports = {
 
     // ════════════════════════════════════════════════════════
     //  MEMBER STATE CHANGES  →  member_log_channel
-    //  (timeout, server mute, server deafen, nickname)
+    //  NOTE: server mute/deafen are handled in voiceStateUpdate
+    //  because guildMemberUpdate does NOT reliably fire for them.
     // ════════════════════════════════════════════════════════
     const memberLogChannel = settings?.member_log_channel
       ? guild.channels.cache.get(settings.member_log_channel)
@@ -78,29 +78,26 @@ module.exports = {
     const oldTimeout = oldMember.communicationDisabledUntil;
     const newTimeout = newMember.communicationDisabledUntil;
     const now = new Date();
-
-    const wasTimedOut  = oldTimeout && oldTimeout > now;
-    const isTimedOut   = newTimeout && newTimeout > now;
+    const wasTimedOut = oldTimeout && oldTimeout > now;
+    const isTimedOut  = newTimeout && newTimeout > now;
 
     if (!wasTimedOut && isTimedOut) {
-      // Timeout applied
       const entry = await getAuditEntry(guild, AuditLogEvent.MemberUpdate);
       const embed = new EmbedBuilder()
         .setColor(0xf0883e)
         .setAuthor({ name: newMember.displayName, iconURL: avatarURL })
         .setTitle('⏱️ Member Timed Out')
         .addFields(
-          { name: 'Member',    value: `<@${newMember.id}>`, inline: true },
-          { name: 'Until',     value: `<t:${Math.floor(newTimeout.getTime() / 1000)}:F>`, inline: true },
-          { name: 'Timed By',  value: entry?.executor ? `<@${entry.executor.id}>` : 'Unknown', inline: true },
-          { name: 'Reason',    value: entry?.reason ?? 'No reason provided', inline: false },
+          { name: 'Member',   value: `<@${newMember.id}>`, inline: true },
+          { name: 'Until',    value: `<t:${Math.floor(newTimeout.getTime() / 1000)}:F>`, inline: true },
+          { name: 'Timed By', value: entry?.executor ? `<@${entry.executor.id}>` : 'Unknown', inline: true },
+          { name: 'Reason',   value: entry?.reason ?? 'No reason provided', inline: false },
         )
         .setFooter({ text: `User ID: ${newMember.id}` })
         .setTimestamp();
       await memberLogChannel.send({ embeds: [embed] });
 
     } else if (wasTimedOut && !isTimedOut) {
-      // Timeout removed
       const entry = await getAuditEntry(guild, AuditLogEvent.MemberUpdate);
       const embed = new EmbedBuilder()
         .setColor(0x3fb950)
@@ -109,40 +106,6 @@ module.exports = {
         .addFields(
           { name: 'Member',     value: `<@${newMember.id}>`, inline: true },
           { name: 'Removed By', value: entry?.executor ? `<@${entry.executor.id}>` : 'Unknown', inline: true },
-        )
-        .setFooter({ text: `User ID: ${newMember.id}` })
-        .setTimestamp();
-      await memberLogChannel.send({ embeds: [embed] });
-    }
-
-    // ── Server Mute ────────────────────────────────────────
-    if (oldMember.voice.serverMute !== newMember.voice.serverMute) {
-      const muted = newMember.voice.serverMute;
-      const entry = await getAuditEntry(guild, AuditLogEvent.MemberUpdate);
-      const embed = new EmbedBuilder()
-        .setColor(muted ? 0xf85149 : 0x3fb950)
-        .setAuthor({ name: newMember.displayName, iconURL: avatarURL })
-        .setTitle(muted ? '🔇 Member Server Muted' : '🔊 Member Server Unmuted')
-        .addFields(
-          { name: 'Member', value: `<@${newMember.id}>`, inline: true },
-          { name: muted ? 'Muted By' : 'Unmuted By', value: entry?.executor ? `<@${entry.executor.id}>` : 'Unknown', inline: true },
-        )
-        .setFooter({ text: `User ID: ${newMember.id}` })
-        .setTimestamp();
-      await memberLogChannel.send({ embeds: [embed] });
-    }
-
-    // ── Server Deafen ──────────────────────────────────────
-    if (oldMember.voice.serverDeaf !== newMember.voice.serverDeaf) {
-      const deafened = newMember.voice.serverDeaf;
-      const entry = await getAuditEntry(guild, AuditLogEvent.MemberUpdate);
-      const embed = new EmbedBuilder()
-        .setColor(deafened ? 0xf85149 : 0x3fb950)
-        .setAuthor({ name: newMember.displayName, iconURL: avatarURL })
-        .setTitle(deafened ? '🔕 Member Server Deafened' : '🔔 Member Server Undeafened')
-        .addFields(
-          { name: 'Member', value: `<@${newMember.id}>`, inline: true },
-          { name: deafened ? 'Deafened By' : 'Undeafened By', value: entry?.executor ? `<@${entry.executor.id}>` : 'Unknown', inline: true },
         )
         .setFooter({ text: `User ID: ${newMember.id}` })
         .setTimestamp();
