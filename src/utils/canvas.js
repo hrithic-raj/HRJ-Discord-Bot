@@ -385,4 +385,91 @@ async function generateWeeklyWinnerCard(member, userData, guild) {
   return canvas.toBuffer('image/png');
 }
 
-module.exports = { generateLevelUpCard, generateProfileCard, generateLeaderboardCard, generateWeeklyWinnerCard };
+module.exports = { generateLevelUpCard, generateProfileCard, generateLeaderboardCard, generateWeeklyWinnerCard, generateWelcomeCard };
+
+// ══ WELCOME CARD ══
+async function generateWelcomeCard(member, guild, bgPath = null) {
+  ensureFontsRegistered();
+  const W = 900, H = 300;
+  const canvas = createCanvas(W, H);
+  const ctx = canvas.getContext('2d');
+
+  // Background — custom image or fallback gradient
+  if (bgPath && fs.existsSync(bgPath)) {
+    try {
+      const bg = await loadImage(bgPath);
+      ctx.drawImage(bg, 0, 0, W, H);
+    } catch {
+      drawFallbackBg(ctx, W, H);
+    }
+  } else {
+    drawFallbackBg(ctx, W, H);
+  }
+
+  // Dark overlay so text is always readable
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Left accent bar
+  const bar = ctx.createLinearGradient(0, 0, 0, H);
+  bar.addColorStop(0, '#58a6ff');
+  bar.addColorStop(1, '#FFD700');
+  ctx.fillStyle = bar;
+  ctx.fillRect(0, 0, 6, H);
+
+  // Avatar
+  const avatarURL = member.displayAvatarURL({ extension: 'png', size: 256, forceStatic: true });
+  await drawAvatar(ctx, avatarURL, 130, H / 2, 90);
+
+  // Avatar ring
+  const ring = ctx.createLinearGradient(40, 40, 220, 260);
+  ring.addColorStop(0, '#58a6ff');
+  ring.addColorStop(1, '#FFD700');
+  ctx.strokeStyle = ring;
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(130, H / 2, 94, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Welcome text
+  const welcomeGrad = ctx.createLinearGradient(265, 0, 700, 0);
+  welcomeGrad.addColorStop(0, '#58a6ff');
+  welcomeGrad.addColorStop(1, '#FFD700');
+  ctx.fillStyle = welcomeGrad;
+  ctx.font = `bold 48px "${FONT}"`;
+  ctx.fillText('WELCOME!', 265, 95);
+
+  // Username
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `bold 30px "${FONT}"`;
+  ctx.fillText(member.displayName.substring(0, 20), 267, 145);
+
+  // Server name
+  ctx.fillStyle = 'rgba(230,237,243,0.7)';
+  ctx.font = `18px "${FONT}"`;
+  ctx.fillText(`You are member #${guild.memberCount} of ${guild.name}`, 267, 180);
+
+  // Account age
+  ctx.fillStyle = 'rgba(139,148,158,0.9)';
+  ctx.font = `15px "${FONT}"`;
+  ctx.fillText(`Account created: ${member.user.createdAt.toDateString()}`, 267, 210);
+
+  // Decorative dots
+  ctx.fillStyle = 'rgba(88,166,255,0.15)';
+  for (let i = 0; i < 20; i++) {
+    ctx.beginPath();
+    ctx.arc(Math.random() * W, Math.random() * H, Math.random() * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  return canvas.toBuffer('image/png');
+}
+
+function drawFallbackBg(ctx, W, H) {
+  const bg = ctx.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, '#0d1117');
+  bg.addColorStop(0.5, '#1a1f2e');
+  bg.addColorStop(1, '#0d1117');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+}

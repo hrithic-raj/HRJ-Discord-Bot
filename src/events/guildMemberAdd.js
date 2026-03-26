@@ -1,8 +1,10 @@
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const {
   getAllGuildInvites, upsertInvite,
   logJoin, getGuildSettings,
 } = require('../database');
+const { generateWelcomeCard } = require('../utils/canvas');
+const path = require('path');
 
 module.exports = {
   name: 'guildMemberAdd',
@@ -129,5 +131,26 @@ module.exports = {
       .setTimestamp();
 
     await channel.send({ embeds: [embed] });
+
+    // ─── Welcome Card ───────────────────────────────────────
+    try {
+      const welcomeChannelId = settings?.welcome_channel;
+      if (welcomeChannelId) {
+        const welcomeChannel = guild.channels.cache.get(welcomeChannelId);
+        if (welcomeChannel) {
+          const bgPath = settings?.welcome_bg
+            ? path.join(__dirname, '..', 'assets', settings.welcome_bg)
+            : null;
+          const imageBuffer = await generateWelcomeCard(member, guild, bgPath);
+          const attachment = new AttachmentBuilder(imageBuffer, { name: 'welcome.png' });
+          await welcomeChannel.send({
+            content: `👋 Welcome to **${guild.name}**, <@${member.id}>! We're glad you're here.`,
+            files: [attachment],
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Welcome card error:', e.message);
+    }
   }
 };

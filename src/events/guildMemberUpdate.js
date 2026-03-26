@@ -1,77 +1,170 @@
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, AuditLogEvent } = require('discord.js');
 const { getGuildSettings } = require('../database');
+
+// Helper: fetch most recent audit log entry for a type within 5 seconds
+async function getAuditEntry(guild, type) {
+  try {
+    await new Promise(r => setTimeout(r, 800));
+    const logs = await guild.fetchAuditLogs({ type, limit: 5 });
+    return logs.entries.find(e => Date.now() - e.createdTimestamp < 5000) ?? null;
+  } catch { return null; }
+}
 
 module.exports = {
   name: 'guildMemberUpdate',
-  async execute(oldMember, newMember, client) {
+  async execute(oldMember, newMember) {
     const guild = newMember.guild;
     const settings = await getGuildSettings(guild.id);
-    if (!settings?.role_log_channel) return;
-
-    const logChannel = guild.channels.cache.get(settings.role_log_channel);
-    if (!logChannel) return;
-
-    const oldRoles = oldMember.roles.cache;
-    const newRoles = newMember.roles.cache;
-
-    const addedRoles = newRoles.filter(r => !oldRoles.has(r.id) && r.id !== guild.id);
-    const removedRoles = oldRoles.filter(r => !newRoles.has(r.id) && r.id !== guild.id);
-
-    if (addedRoles.size === 0 && removedRoles.size === 0) return;
-
     const avatarURL = newMember.displayAvatarURL({ size: 64 });
 
-    // Fetch audit logs to find who made the change
-    let executor = null;
-    try {
-      await new Promise(r => setTimeout(r, 800));
-      const auditLogs = await guild.fetchAuditLogs({ type: 25, limit: 5 }); // MEMBER_ROLE_UPDATE
-      const entry = auditLogs.entries.find(e =>
-        e.target?.id === newMember.id && (Date.now() - e.createdTimestamp) < 4000
-      );
-      if (entry) executor = entry.executor;
-    } catch {}
+    // ════════════════════════════════════════════════════════
+    //  ROLE CHANGES  →  role_log_channel
+    // ════════════════════════════════════════════════════════
+    const roleLogChannel = settings?.role_log_channel
+      ? guild.channels.cache.get(settings.role_log_channel)
+      : null;
 
-    if (addedRoles.size > 0) {
+    if (roleLogChannel) {
+      const added   = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id) && r.id !== guild.id);
+      const removed = oldMember.roles.cache.filter(r => !newMember.roles.cache.has(r.id) && r.id !== guild.id);
+
+      if (added.size > 0 || removed.size > 0) {
+        const entry = await getAuditEntry(guild, AuditLogEvent.MemberRoleUpdate);
+        const executor = entry?.executor ?? null;
+
+        if (added.size > 0) {
+          const embed = new EmbedBuilder()
+            .setColor(0x3fb950)
+            .setAuthor({ name: newMember.displayName, iconURL: avatarURL })
+            .setTitle('✅ Role Added to Member')
+            .addFields(
+              { name: 'Member',      value: `<@${newMember.id}>`, inline: true },
+              { name: 'Role(s)',     value: added.map(r => `<@&${r.id}>`).join(', '), inline: true },
+              { name: 'Assigned By', value: executor ? `<@${executor.id}>` : 'Unknown', inline: true },
+            )
+            .setFooter({ text: `User ID: ${newMember.id}` })
+            .setTimestamp();
+          await roleLogChannel.send({ embeds: [embed] });
+        }
+
+        if (removed.size > 0) {
+          const embed = new EmbedBuilder()
+            .setColor(0xf85149)
+            .setAuthor({ name: newMember.displayName, iconURL: avatarURL })
+            .setTitle('❌ Role Removed from Member')
+            .addFields(
+              { name: 'Member',     value: `<@${newMember.id}>`, inline: true },
+              { name: 'Role(s)',    value: removed.map(r => `<@&${r.id}>`).join(', '), inline: true },
+              { name: 'Removed By', value: executor ? `<@${executor.id}>` : 'Unknown', inline: true },
+            )
+            .setFooter({ text: `User ID: ${newMember.id}` })
+            .setTimestamp();
+          await roleLogChannel.send({ embeds: [embed] });
+        }
+      }
+    }
+
+    // ════════════════════════════════════════════════════════
+    //  MEMBER STATE CHANGES  →  member_log_channel
+    //  (timeout, server mute, server deafen, nickname)
+    // ════════════════════════════════════════════════════════
+    const memberLogChannel = settings?.member_log_channel
+      ? guild.channels.cache.get(settings.member_log_channel)
+      : null;
+
+    if (!memberLogChannel) return;
+
+    // ── Timeout ────────────────────────────────────────────
+    const oldTimeout = oldMember.communicationDisabledUntil;
+    const newTimeout = newMember.communicationDisabledUntil;
+    const now = new Date();
+
+    const wasTimedOut  = oldTimeout && oldTimeout > now;
+    const isTimedOut   = newTimeout && newTimeout > now;
+
+    if (!wasTimedOut && isTimedOut) {
+      // Timeout applied
+      const entry = await getAuditEntry(guild, AuditLogEvent.MemberUpdate);
+      const embed = new EmbedBuilder()
+        .setColor(0xf0883e)
+        .setAuthor({ name: newMember.displayName, iconURL: avatarURL })
+        .setTitle('⏱️ Member Timed Out')
+        .addFields(
+          { name: 'Member',    value: `<@${newMember.id}>`, inline: true },
+          { name: 'Until',     value: `<t:${Math.floor(newTimeout.getTime() / 1000)}:F>`, inline: true },
+          { name: 'Timed By',  value: entry?.executor ? `<@${entry.executor.id}>` : 'Unknown', inline: true },
+          { name: 'Reason',    value: entry?.reason ?? 'No reason provided', inline: false },
+        )
+        .setFooter({ text: `User ID: ${newMember.id}` })
+        .setTimestamp();
+      await memberLogChannel.send({ embeds: [embed] });
+
+    } else if (wasTimedOut && !isTimedOut) {
+      // Timeout removed
+      const entry = await getAuditEntry(guild, AuditLogEvent.MemberUpdate);
       const embed = new EmbedBuilder()
         .setColor(0x3fb950)
         .setAuthor({ name: newMember.displayName, iconURL: avatarURL })
-        .setTitle('✅ Role Added')
+        .setTitle('✅ Timeout Removed')
         .addFields(
-          { name: 'Member', value: `<@${newMember.id}>`, inline: true },
-          { name: 'Role(s) Added', value: addedRoles.map(r => `<@&${r.id}>`).join(', '), inline: true },
-        );
-
-      if (executor) {
-        embed.addFields({ name: 'Assigned By', value: `<@${executor.id}>`, inline: true });
-      }
-
-      embed
+          { name: 'Member',     value: `<@${newMember.id}>`, inline: true },
+          { name: 'Removed By', value: entry?.executor ? `<@${entry.executor.id}>` : 'Unknown', inline: true },
+        )
         .setFooter({ text: `User ID: ${newMember.id}` })
         .setTimestamp();
-
-      await logChannel.send({ embeds: [embed] });
+      await memberLogChannel.send({ embeds: [embed] });
     }
 
-    if (removedRoles.size > 0) {
+    // ── Server Mute ────────────────────────────────────────
+    if (oldMember.voice.serverMute !== newMember.voice.serverMute) {
+      const muted = newMember.voice.serverMute;
+      const entry = await getAuditEntry(guild, AuditLogEvent.MemberUpdate);
       const embed = new EmbedBuilder()
-        .setColor(0xf85149)
+        .setColor(muted ? 0xf85149 : 0x3fb950)
         .setAuthor({ name: newMember.displayName, iconURL: avatarURL })
-        .setTitle('❌ Role Removed')
+        .setTitle(muted ? '🔇 Member Server Muted' : '🔊 Member Server Unmuted')
         .addFields(
           { name: 'Member', value: `<@${newMember.id}>`, inline: true },
-          { name: 'Role(s) Removed', value: removedRoles.map(r => `<@&${r.id}>`).join(', '), inline: true },
-        );
-
-      if (executor) {
-        embed.addFields({ name: 'Removed By', value: `<@${executor.id}>`, inline: true });
-      }
-
-      embed
+          { name: muted ? 'Muted By' : 'Unmuted By', value: entry?.executor ? `<@${entry.executor.id}>` : 'Unknown', inline: true },
+        )
         .setFooter({ text: `User ID: ${newMember.id}` })
         .setTimestamp();
+      await memberLogChannel.send({ embeds: [embed] });
+    }
 
-      await logChannel.send({ embeds: [embed] });
+    // ── Server Deafen ──────────────────────────────────────
+    if (oldMember.voice.serverDeaf !== newMember.voice.serverDeaf) {
+      const deafened = newMember.voice.serverDeaf;
+      const entry = await getAuditEntry(guild, AuditLogEvent.MemberUpdate);
+      const embed = new EmbedBuilder()
+        .setColor(deafened ? 0xf85149 : 0x3fb950)
+        .setAuthor({ name: newMember.displayName, iconURL: avatarURL })
+        .setTitle(deafened ? '🔕 Member Server Deafened' : '🔔 Member Server Undeafened')
+        .addFields(
+          { name: 'Member', value: `<@${newMember.id}>`, inline: true },
+          { name: deafened ? 'Deafened By' : 'Undeafened By', value: entry?.executor ? `<@${entry.executor.id}>` : 'Unknown', inline: true },
+        )
+        .setFooter({ text: `User ID: ${newMember.id}` })
+        .setTimestamp();
+      await memberLogChannel.send({ embeds: [embed] });
+    }
+
+    // ── Nickname Change ────────────────────────────────────
+    if (oldMember.nickname !== newMember.nickname) {
+      const entry = await getAuditEntry(guild, AuditLogEvent.MemberUpdate);
+      const embed = new EmbedBuilder()
+        .setColor(0x58a6ff)
+        .setAuthor({ name: newMember.displayName, iconURL: avatarURL })
+        .setTitle('✏️ Nickname Changed')
+        .addFields(
+          { name: 'Member',       value: `<@${newMember.id}>`, inline: true },
+          { name: 'Old Nickname', value: oldMember.nickname ?? '*None*', inline: true },
+          { name: 'New Nickname', value: newMember.nickname ?? '*Removed*', inline: true },
+          { name: 'Changed By',   value: entry?.executor ? `<@${entry.executor.id}>` : 'Unknown', inline: true },
+        )
+        .setFooter({ text: `User ID: ${newMember.id}` })
+        .setTimestamp();
+      await memberLogChannel.send({ embeds: [embed] });
     }
   }
 };

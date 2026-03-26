@@ -15,12 +15,18 @@ const userSchema = new mongoose.Schema({
 userSchema.index({ guild_id: 1, user_id: 1 }, { unique: true });
 
 const guildSettingsSchema = new mongoose.Schema({
-  guild_id:            { type: String, required: true, unique: true },
-  level_channel:       { type: String, default: null },
-  voice_log_channel:   { type: String, default: null },
-  role_log_channel:    { type: String, default: null },
-  weekly_channel:      { type: String, default: null },
-  invite_log_channel:  { type: String, default: null },
+  guild_id:              { type: String, required: true, unique: true },
+  level_channel:         { type: String, default: null },
+  voice_log_channel:     { type: String, default: null },
+  role_log_channel:      { type: String, default: null },
+  weekly_channel:        { type: String, default: null },
+  invite_log_channel:    { type: String, default: null },
+  channel_log_channel:   { type: String, default: null },
+  server_log_channel:    { type: String, default: null },
+  chat_log_channel:      { type: String, default: null },
+  member_log_channel:    { type: String, default: null },
+  welcome_channel:       { type: String, default: null },
+  welcome_bg:            { type: String, default: null },
 });
 
 const rewardSchema = new mongoose.Schema({
@@ -211,6 +217,39 @@ async function setInviteLogChannel(guildId, channelId) {
   );
 }
 
+
+async function setChannelLogChannel(guildId, channelId) {
+  await GuildSettings.findOneAndUpdate(
+    { guild_id: guildId }, { $set: { channel_log_channel: channelId } }, { upsert: true }
+  );
+}
+
+async function setServerLogChannel(guildId, channelId) {
+  await GuildSettings.findOneAndUpdate(
+    { guild_id: guildId }, { $set: { server_log_channel: channelId } }, { upsert: true }
+  );
+}
+
+async function setChatLogChannel(guildId, channelId) {
+  await GuildSettings.findOneAndUpdate(
+    { guild_id: guildId }, { $set: { chat_log_channel: channelId } }, { upsert: true }
+  );
+}
+
+async function setMemberLogChannel(guildId, channelId) {
+  await GuildSettings.findOneAndUpdate(
+    { guild_id: guildId }, { $set: { member_log_channel: channelId } }, { upsert: true }
+  );
+}
+
+async function setWelcomeChannel(guildId, channelId, bgPath = null) {
+  await GuildSettings.findOneAndUpdate(
+    { guild_id: guildId },
+    { $set: { welcome_channel: channelId, ...(bgPath ? { welcome_bg: bgPath } : {}) } },
+    { upsert: true }
+  );
+}
+
 async function setWeeklyChannel(guildId, channelId) {
   await GuildSettings.findOneAndUpdate(
     { guild_id: guildId },
@@ -322,6 +361,7 @@ module.exports = {
   incrementMessages, setLastMessage, addVoiceMinutes,
   getLeaderboard, getTotalUsers, getWeeklyLeaderboard, resetWeeklyXP,
   getGuildSettings, setLevelChannel, setVoiceLogChannel, setRoleLogChannel, setWeeklyChannel, setInviteLogChannel,
+  setChannelLogChannel, setServerLogChannel, setChatLogChannel, setMemberLogChannel, setWelcomeChannel,
   setReward, getReward, getAllRewards,
   startVoiceSession, endVoiceSession,
   xpForLevel, xpToNextLevel,
